@@ -1,0 +1,1649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Math Jumper - 8-Bit Retro Platformer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #0b0e14;
+      font-family: 'Press Start 2P', monospace;
+      color: #ffffff;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    /* CRT Scanline and vignette overlay for authentic arcade feel */
+    .arcade-cabinet {
+      position: relative;
+      width: 100%;
+      max-width: 960px;
+      aspect-ratio: 16 / 10;
+      background: #5c94fc;
+      border: 8px solid #201a15;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.8), 0 0 0 4px #b85400;
+      overflow: hidden;
+    }
+    .scanlines {
+      pointer-events: none;
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+      background-size: 100% 4px;
+      z-index: 20;
+      opacity: 0.7;
+    }
+    .crt-glow {
+      pointer-events: none;
+      position: absolute;
+      inset: 0;
+      box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.65);
+      z-index: 21;
+    }
+    /* Retro Buttons */
+    .retro-btn {
+      font-family: 'Press Start 2P', monospace;
+      background: #e52521;
+      color: #fff;
+      border: 4px solid #fff;
+      box-shadow: 4px 4px 0 #000;
+      transition: all 0.08s ease;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .retro-btn:active {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0 #000;
+    }
+    .retro-btn-green {
+      background: #00a800;
+      border-color: #fff;
+      box-shadow: 4px 4px 0 #004d00;
+    }
+    .retro-btn-yellow {
+      background: #fcb000;
+      color: #222;
+      border-color: #fff;
+      box-shadow: 4px 4px 0 #804400;
+    }
+    /* Virtual Gamepad for Mobile */
+    .touch-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 3px solid #f8f8f8;
+      border-radius: 12px;
+      background: rgba(40, 40, 40, 0.75);
+      color: white;
+      font-family: 'Press Start 2P', monospace;
+      box-shadow: 0 4px 0 rgba(0,0,0,0.7);
+      user-select: none;
+      touch-action: none;
+    }
+    .touch-btn:active, .touch-btn.active {
+      background: rgba(229, 37, 33, 0.9);
+      transform: translateY(2px);
+      box-shadow: 0 2px 0 rgba(0,0,0,0.7);
+    }
+    /* HUD Font adjustments */
+    .hud-text {
+      text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000;
+    }
+    /* Blinking animations */
+    @keyframes blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+    .blink {
+      animation: blink 0.9s infinite;
+    }
+  </style>
+</head>
+<body class="bg-zinc-950 text-white select-none">
+
+  <div class="w-full max-w-5xl flex flex-col items-center p-2 sm:p-4">
+    
+    <!-- Top Decorative Header -->
+    <header class="w-full flex items-center justify-between pb-2 px-2 text-xs sm:text-sm">
+      <div class="flex items-center gap-2 text-red-500 font-bold tracking-widest">
+        <span>★</span> MATH JUMPER 64 <span>★</span>
+      </div>
+      <div class="text-[10px] sm:text-xs text-amber-300">
+        SUPER RETRO 8-BIT EDITION
+      </div>
+    </header>
+
+    <!-- Main Cabinet Frame -->
+    <div class="arcade-cabinet relative w-full overflow-hidden bg-sky-400">
+      <canvas id="gameCanvas" class="w-full h-full block image-rendering-pixelated"></canvas>
+      <div class="scanlines"></div>
+      <div class="crt-glow"></div>
+
+      <div id="hudLayer" class="absolute top-0 left-0 right-0 p-3 sm:p-4 z-10 flex flex-wrap justify-between items-start pointer-events-none text-[9px] sm:text-xs hud-text tracking-wide">
+        <!-- Player & Score -->
+        <div class="flex flex-col gap-1">
+          <span class="text-red-400">MATH JUMPER</span>
+          <span id="scoreVal" class="text-white">000000</span>
+        </div>
+
+        <!-- Coin / Star counter -->
+        <div class="flex flex-col items-center gap-1">
+          <span class="text-amber-300">STARS</span>
+          <span class="text-yellow-200">★ x<span id="starVal">00</span></span>
+        </div>
+
+        <!-- Math Question Target Box -->
+        <div class="bg-black/60 border-2 border-yellow-400 px-3 py-1 rounded-sm shadow-md flex flex-col items-center">
+          <span class="text-[8px] sm:text-[10px] text-yellow-300">SOLVE TARGET</span>
+          <span id="mathTarget" class="text-white text-xs sm:text-sm font-bold text-center tracking-wider">3 + 4 = ?</span>
+        </div>
+
+        <!-- World / Stage -->
+        <div class="flex flex-col items-center gap-1">
+          <span class="text-emerald-400">WORLD</span>
+          <span id="stageVal" class="text-white">1 - 1</span>
+        </div>
+
+        <!-- Lives / Health & Power-Up Badge -->
+        <div class="flex flex-col items-end gap-1">
+          <span class="text-red-400">LIVES</span>
+          <div class="flex items-center gap-2">
+            <span id="powerBadge" class="hidden text-[8px] px-1 py-0.5 bg-yellow-400 text-black font-extrabold animate-pulse rounded">SUPER!</span>
+            <span id="livesVal" class="text-red-300">♥♥♥</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Start Screen Modal -->
+      <div id="startScreen" class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center p-6 text-center z-30">
+        <h1 class="text-2xl sm:text-4xl text-amber-400 mb-4 hud-text tracking-wider leading-relaxed">
+          MATH JUMPER
+        </h1>
+        <p class="text-[10px] sm:text-xs text-zinc-300 max-w-md leading-relaxed mb-6">
+          Collect stars matching the target equation! Blast patrolling math bugs before they touch you!
+        </p>
+
+        <div class="bg-zinc-900/90 border-2 border-zinc-500 p-4 rounded mb-6 text-left text-[9px] sm:text-xs space-y-2 text-zinc-200">
+          <div><span class="text-yellow-400">A / D / ARROWS:</span> Move Left / Right</div>
+          <div><span class="text-green-400">W / UP / SPACE:</span> Jump / High Leap</div>
+          <div><span class="text-red-400">X / F / ENTER:</span> Fireball Spark</div>
+        </div>
+
+        <button id="startBtn" class="retro-btn retro-btn-yellow text-xs sm:text-sm px-6 py-3 rounded">
+          INSERT COIN & START
+        </button>
+      </div>
+
+      <!-- Game Over Screen -->
+      <div id="gameOverScreen" class="hidden absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 text-center z-30">
+        <h2 class="text-2xl sm:text-4xl text-red-500 mb-3 hud-text tracking-wider">
+          GAME OVER
+        </h2>
+        <p class="text-xs sm:text-sm text-yellow-300 mb-2">FINAL SCORE: <span id="finalScoreVal">0</span></p>
+        <p class="text-[10px] sm:text-xs text-zinc-400 mb-6">PROBLEMS SOLVED: <span id="finalSolvedVal">0</span></p>
+        <button id="restartBtn" class="retro-btn retro-btn-green text-xs sm:text-sm px-6 py-3 rounded">
+          TRY AGAIN
+        </button>
+      </div>
+
+      <!-- Stage Clear Banner Notification -->
+      <div id="bannerNotice" class="hidden absolute top-1/3 left-0 right-0 py-3 bg-yellow-400 text-zinc-950 text-center font-bold text-sm sm:text-lg tracking-widest z-25 border-y-4 border-black">
+        SOLVED! +500 PTS
+      </div>
+
+      <!-- SIFIR Defense Modal (Bila Terlanggar Musuh) -->
+      <div id="sifirModal" class="hidden absolute inset-0 bg-red-950/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center z-40 border-4 border-red-500">
+        <div class="animate-bounce text-red-400 text-[10px] sm:text-xs tracking-widest mb-1">⚠️ AWAS! TERLANGGAR MUSUH! ⚠️</div>
+        <h3 class="text-xs sm:text-sm text-yellow-300 font-bold mb-3 hud-text">JAWAB SIFIR UNTUK SELAMATKAN NYAWA:</h3>
+        
+        <div class="bg-black/85 border-4 border-amber-400 px-6 py-3 rounded-lg shadow-2xl mb-4">
+          <span id="sifirQuestion" class="text-white text-base sm:text-2xl font-bold tracking-widest">7 × 8 = ?</span>
+        </div>
+
+        <div id="sifirChoices" class="grid grid-cols-3 gap-2 sm:gap-3 w-full max-w-xs mb-3">
+          <!-- Button options injected dynamically -->
+        </div>
+        <p class="text-[9px] text-zinc-300">Pilih jawapan betul untuk kalahkan musuh dan elak kehilangan nyawa!</p>
+      </div>
+    </div>
+
+    <div class="w-full mt-3 flex items-center justify-between px-2 gap-4 max-w-3xl">
+      <!-- D-Pad Directional -->
+      <div class="flex items-center gap-2">
+        <button id="btnLeft" class="touch-btn w-14 h-14 text-lg">◀</button>
+        <button id="btnRight" class="touch-btn w-14 h-14 text-lg">▶</button>
+      </div>
+
+      <!-- Instruction reminder on desktop, hidden on tiny screens -->
+      <div class="hidden sm:block text-[9px] text-zinc-500 text-center leading-tight">
+        PRESS <span class="text-zinc-300">SPACE</span> TO JUMP<br>
+        PRESS <span class="text-zinc-300">X</span> TO FIREBALL
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-3">
+        <button id="btnShoot" class="touch-btn w-14 h-14 text-xs font-bold text-amber-300 bg-red-900/70 border-red-400">FIRE</button>
+        <button id="btnJump" class="touch-btn w-14 h-14 text-xs font-bold text-emerald-300 bg-emerald-900/70 border-emerald-400">JUMP</button>
+      </div>
+    </div>
+
+    <footer class="mt-4 text-[9px] text-zinc-600 text-center">
+      Classic 80s arcade mechanics with dynamic arithmetic problems.
+    </footer>
+  </div>
+
+  <script>
+    // Synthesizes retro sounds on demand without external assets
+    const AudioEngine = {
+      ctx: null,
+      muted: false,
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      },
+      playTone(freq, type, duration, endFreq = null, gainVal = 0.15) {
+        if (this.muted) return;
+        try {
+          this.init();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          if (endFreq !== null) {
+            osc.frequency.exponentialRampToValueAtTime(Math.max(1, endFreq), this.ctx.currentTime + duration);
+          }
+          gain.gain.setValueAtTime(gainVal, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + duration);
+        } catch (e) {
+          // Audio fallback gracefully
+        }
+      },
+      jump() {
+        this.playTone(150, 'square', 0.18, 550, 0.12);
+      },
+      shoot() {
+        this.playTone(850, 'triangle', 0.14, 180, 0.14);
+      },
+      correct() {
+        // Joyful arpeggio for solving math
+        const now = this.ctx ? this.ctx.currentTime : 0;
+        [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+          setTimeout(() => {
+            this.playTone(freq, 'square', 0.12, null, 0.1);
+          }, i * 65);
+        });
+      },
+      wrong() {
+        this.playTone(180, 'sawtooth', 0.25, 60, 0.18);
+      },
+      hitEnemy() {
+        this.playTone(320, 'square', 0.15, 80, 0.2);
+      },
+      playerHurt() {
+        this.playTone(280, 'sawtooth', 0.35, 70, 0.25);
+      },
+      coinPickup(isBonus = false) {
+        // Crisp Mario-style coin ding sound
+        if (this.muted) return;
+        try {
+          this.init();
+          const base = isBonus ? 1200 : 987.77; // B5 or Higher note
+          this.playTone(base, 'sine', 0.08, null, 0.15);
+          setTimeout(() => {
+            this.playTone(base * 1.33, 'sine', 0.14, null, 0.12);
+          }, 70);
+        } catch (e) {}
+      },
+      powerUpSound() {
+        // Ascending classic 8-bit powerup fanfare
+        if (this.muted) return;
+        try {
+          this.init();
+          const notes = [330, 392, 659, 523, 587, 784];
+          notes.forEach((freq, i) => {
+            setTimeout(() => {
+              this.playTone(freq, 'square', 0.09, null, 0.16);
+            }, i * 60);
+          });
+        } catch (e) {}
+      },
+      gameOver() {
+        [392, 349.2, 329.6, 261.6].forEach((f, idx) => {
+          setTimeout(() => this.playTone(f, 'square', 0.28, null, 0.15), idx * 220);
+        });
+      }
+    };
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Logical internal resolution for retro pixel look
+    const V_WIDTH = 640;
+    const V_HEIGHT = 400;
+    canvas.width = V_WIDTH;
+    canvas.height = V_HEIGHT;
+
+    // Game state tracking
+    const STATE = {
+      MENU: 0,
+      PLAYING: 1,
+      GAMEOVER: 2,
+      QUIZ: 3
+    };
+    let currentState = STATE.MENU;
+
+    let score = 0;
+    let starsCollected = 0;
+    let lives = 3;
+    let worldLevel = 1;
+    let solvedEquationsCount = 0;
+
+    // Math Challenge State
+    let currentProblem = {
+      text: "3 + 4 = ?",
+      solution: 7,
+      choices: [7, 5, 8]
+    };
+
+    // Camera viewport
+    let cameraX = 0;
+
+    function generateMathProblem() {
+      let text, ans;
+
+      if (worldLevel >= 2) {
+        // LEVEL 2: Soalan Lebih Sukar (Sifir Lanjutan, Bahagi, dan Operasi Bergabung)
+        const type = Math.random();
+        if (type < 0.35) {
+          // Operasi Bergabung: (a × b) + c atau (a × b) - c
+          const a = Math.floor(Math.random() * 5) + 3; // 3 to 7
+          const b = Math.floor(Math.random() * 6) + 2; // 2 to 7
+          const c = Math.floor(Math.random() * 8) + 1;
+          const isAdd = Math.random() > 0.5;
+          ans = isAdd ? (a * b) + c : (a * b) - c;
+          text = `(${a} × ${b}) ${isAdd ? '+' : '-'} ${c} = ?`;
+        } else if (type < 0.70) {
+          // Operasi Bahagi (Division)
+          const divisor = Math.floor(Math.random() * 7) + 3; // 3 to 9
+          ans = Math.floor(Math.random() * 8) + 2;          // 2 to 9
+          const dividend = divisor * ans;
+          text = `${dividend} ÷ ${divisor} = ?`;
+        } else {
+          // Sifir Lanjutan (Multiplication 7 - 12)
+          const a = Math.floor(Math.random() * 6) + 7; // 7 to 12
+          const b = Math.floor(Math.random() * 8) + 3; // 3 to 10
+          ans = a * b;
+          text = `${a} × ${b} = ?`;
+        }
+      } else {
+        // LEVEL 1: Tambah, Tolak, dan Sifir Asas
+        const op = Math.random() > 0.5 ? '+' : (Math.random() > 0.4 ? '-' : '×');
+        let a, b;
+
+        if (op === '+') {
+          a = Math.floor(Math.random() * 12) + 1;
+          b = Math.floor(Math.random() * 12) + 1;
+          ans = a + b;
+          text = `${a} + ${b} = ?`;
+        } else if (op === '-') {
+          a = Math.floor(Math.random() * 15) + 5;
+          b = Math.floor(Math.random() * (a - 1)) + 1;
+          ans = a - b;
+          text = `${a} - ${b} = ?`;
+        } else {
+          a = Math.floor(Math.random() * 6) + 2;
+          b = Math.floor(Math.random() * 6) + 1;
+          ans = a * b;
+          text = `${a} × ${b} = ?`;
+        }
+      }
+
+      // Generate distinct distractor answers
+      const choices = [ans];
+      while (choices.length < 3) {
+        const offset = (Math.random() > 0.5 ? 1 : -1) * (Math.floor(Math.random() * 4) + 1);
+        const wrongAns = Math.max(0, ans + offset);
+        if (!choices.includes(wrongAns)) {
+          choices.push(wrongAns);
+        }
+      }
+      choices.sort(() => Math.random() - 0.5);
+
+      currentProblem = {
+        text: text,
+        solution: ans,
+        choices: choices
+      };
+
+      document.getElementById('mathTarget').innerText = currentProblem.text;
+    }
+
+    const keys = {
+      left: false,
+      right: false,
+      jump: false,
+      shoot: false
+    };
+
+    window.addEventListener('keydown', (e) => {
+      AudioEngine.init();
+      if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) {
+        if (!keys.jump && currentState === STATE.PLAYING) player.jump();
+        keys.jump = true;
+        e.preventDefault();
+      }
+      if (['ArrowLeft', 'KeyA'].includes(e.code)) {
+        keys.left = true;
+        e.preventDefault();
+      }
+      if (['ArrowRight', 'KeyD'].includes(e.code)) {
+        keys.right = true;
+        e.preventDefault();
+      }
+      if (['KeyX', 'KeyF', 'Enter'].includes(e.code)) {
+        if (!keys.shoot && currentState === STATE.PLAYING) player.shoot();
+        keys.shoot = true;
+        e.preventDefault();
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) keys.jump = false;
+      if (['ArrowLeft', 'KeyA'].includes(e.code)) keys.left = false;
+      if (['ArrowRight', 'KeyD'].includes(e.code)) keys.right = false;
+      if (['KeyX', 'KeyF', 'Enter'].includes(e.code)) keys.shoot = false;
+    });
+
+    // Touch controls attachment
+    function bindTouch(id, keyName, actionCallback = null) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const activate = (e) => {
+        e.preventDefault();
+        AudioEngine.init();
+        keys[keyName] = true;
+        el.classList.add('active');
+        if (actionCallback && currentState === STATE.PLAYING) actionCallback();
+      };
+      const deactivate = (e) => {
+        e.preventDefault();
+        keys[keyName] = false;
+        el.classList.remove('active');
+      };
+      el.addEventListener('touchstart', activate, { passive: false });
+      el.addEventListener('touchend', deactivate, { passive: false });
+      el.addEventListener('mousedown', activate);
+      el.addEventListener('mouseup', deactivate);
+      el.addEventListener('mouseleave', deactivate);
+    }
+
+    bindTouch('btnLeft', 'left');
+    bindTouch('btnRight', 'right');
+    bindTouch('btnJump', 'jump', () => player.jump());
+    bindTouch('btnShoot', 'shoot', () => player.shoot());
+
+    // Player Character Specification
+    const player = {
+      x: 80,
+      y: 280,
+      w: 24,
+      h: 32,
+      vx: 0,
+      vy: 0,
+      baseSpeed: 3.8,
+      speed: 3.8,
+      baseJump: -9.8,
+      jumpStrength: -9.8,
+      gravity: 0.44,
+      grounded: false,
+      facing: 1, // 1: right, -1: left
+      invincibleTimer: 0,
+      walkFrame: 0,
+      frameCounter: 0,
+
+      // Power-up attributes
+      isSuper: false,
+      powerTimer: 0,
+
+      reset() {
+        this.x = 80;
+        this.y = 280;
+        this.vx = 0;
+        this.vy = 0;
+        this.grounded = false;
+        this.facing = 1;
+        this.invincibleTimer = 60;
+        this.isSuper = false;
+        this.powerTimer = 0;
+        this.speed = this.baseSpeed;
+        this.jumpStrength = this.baseJump;
+        this.w = 24;
+        this.h = 32;
+        const badge = document.getElementById('powerBadge');
+        if (badge) badge.classList.add('hidden');
+      },
+
+      activateSuperStar() {
+        this.isSuper = true;
+        this.powerTimer = 720; // ~12 saat pada 60fps
+        this.speed = this.baseSpeed * 1.35; // +35% kelajuan lari
+        this.jumpStrength = -11.2; // Lompatan lebih tinggi untuk capai bintang rahsia
+        AudioEngine.powerUpSound();
+        showBannerNotice('★ SUPER STAR MARIO ACTIVATED! ★');
+        const badge = document.getElementById('powerBadge');
+        if (badge) badge.classList.remove('hidden');
+      },
+
+      jump() {
+        if (this.grounded) {
+          this.vy = this.jumpStrength;
+          this.grounded = false;
+          AudioEngine.jump();
+          createJumpDust(this.x + this.w / 2, this.y + this.h);
+        }
+      },
+
+      shoot() {
+        if (fireballs.length < 3) {
+          fireballs.push(new Fireball(
+            this.x + (this.facing === 1 ? this.w + 2 : -10),
+            this.y + 12,
+            this.facing * (this.isSuper ? 8.5 : 6.5)
+          ));
+          AudioEngine.shoot();
+        }
+      },
+
+      update() {
+        // Handle Power-Up countdown
+        if (this.isSuper) {
+          this.powerTimer--;
+          if (this.powerTimer % 4 === 0) {
+            // Rainbow sparkle trail behind Mario
+            const rainbowColors = ['#ff0055', '#ffcc00', '#00ffcc', '#ff00ff', '#ffffff'];
+            const sparkColor = rainbowColors[Math.floor(Math.random() * rainbowColors.length)];
+            particles.push(new Particle(this.x + Math.random() * this.w, this.y + Math.random() * this.h, sparkColor, 0.4));
+          }
+          if (this.powerTimer <= 0) {
+            this.isSuper = false;
+            this.speed = this.baseSpeed;
+            this.jumpStrength = this.baseJump;
+            const badge = document.getElementById('powerBadge');
+            if (badge) badge.classList.add('hidden');
+            floatingTexts.push(new FloatingText(this.x, this.y - 12, 'POWER DOWN', '#ffdd00'));
+          }
+        }
+
+        // Horizontal movement
+        if (keys.left) {
+          this.vx = -this.speed;
+          this.facing = -1;
+        } else if (keys.right) {
+          this.vx = this.speed;
+          this.facing = 1;
+        } else {
+          this.vx *= 0.7;
+          if (Math.abs(this.vx) < 0.1) this.vx = 0;
+        }
+
+        this.x += this.vx;
+
+        // Animate walk cycle
+        if (Math.abs(this.vx) > 0.5 && this.grounded) {
+          this.frameCounter++;
+          if (this.frameCounter % 6 === 0) {
+            this.walkFrame = (this.walkFrame + 1) % 4;
+          }
+        } else {
+          this.walkFrame = 0;
+        }
+
+        // Vertical movement / Gravity
+        this.vy += this.gravity;
+        if (this.vy > 12) this.vy = 12;
+        this.y += this.vy;
+
+        // Invincibility countdown
+        if (this.invincibleTimer > 0) this.invincibleTimer--;
+
+        // Bottom abyss pit check
+        if (this.y > V_HEIGHT + 60) {
+          playerTakeDamage(true);
+        }
+      },
+
+      draw() {
+        // Blink if hurt/invincible (kecuali jika dalam mod Super Star)
+        if (!this.isSuper && this.invincibleTimer > 0 && Math.floor(this.invincibleTimer / 4) % 2 === 0) {
+          return;
+        }
+
+        ctx.save();
+        ctx.translate(Math.round(this.x - cameraX + this.w / 2), Math.round(this.y + this.h / 2));
+        if (this.facing === -1) {
+          ctx.scale(-1, 1);
+        }
+
+        // 8-Bit Pixel Character (dengan Super Star Rainbow Cycle jika aktif)
+        const px = -12;
+        const py = -16;
+
+        let suitRed = '#e52521';
+        let suitBlue = '#0038a8';
+        if (this.isSuper) {
+          // Dynamic rainbow shimmer color
+          const hue = (Date.now() / 3) % 360;
+          suitRed = `hsl(${hue}, 100%, 55%)`;
+          suitBlue = `hsl(${(hue + 120) % 360}, 100%, 45%)`;
+        }
+
+        // Cap
+        ctx.fillStyle = suitRed;
+        ctx.fillRect(px + 4, py, 16, 6);
+        ctx.fillRect(px + 8, py + 4, 16, 4);
+
+        // Face & Nose (Peach skin tone)
+        ctx.fillStyle = '#fcb088';
+        ctx.fillRect(px + 6, py + 8, 12, 8);
+        ctx.fillRect(px + 16, py + 9, 5, 5); // Nose
+
+        // Mustache & Eye
+        ctx.fillStyle = '#4a2500';
+        ctx.fillRect(px + 12, py + 7, 3, 4); // Eye
+        ctx.fillRect(px + 12, py + 12, 8, 4); // Mustache
+
+        // Dungarees / Overalls
+        ctx.fillStyle = suitBlue;
+        ctx.fillRect(px + 4, py + 16, 16, 10);
+        // Button
+        ctx.fillStyle = '#fce000';
+        ctx.fillRect(px + 12, py + 17, 2, 2);
+
+        // Shirt Sleeves
+        ctx.fillStyle = suitRed;
+        ctx.fillRect(px + 1, py + 16, 5, 6);
+        ctx.fillRect(px + 18, py + 16, 5, 6);
+
+        // Legs & Boots with walk cycle
+        ctx.fillStyle = '#4a2500'; // Brown Boots
+        if (!this.grounded) {
+          // Jumping pose
+          ctx.fillRect(px + 2, py + 26, 8, 6);
+          ctx.fillRect(px + 14, py + 24, 8, 6);
+        } else if (this.walkFrame === 1 || this.walkFrame === 3) {
+          ctx.fillRect(px + 1, py + 26, 8, 6);
+          ctx.fillRect(px + 15, py + 26, 8, 6);
+        } else {
+          ctx.fillRect(px + 4, py + 26, 6, 6);
+          ctx.fillRect(px + 13, py + 26, 6, 6);
+        }
+
+        ctx.restore();
+      }
+    };
+
+    class Fireball {
+      constructor(x, y, vx) {
+        this.x = x;
+        this.y = y;
+        this.vx = vx;
+        this.vy = 1;
+        this.radius = 6;
+        this.life = 120;
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += 0.25;
+
+        // Bounce on platforms
+        platforms.forEach(p => {
+          if (this.x > p.x && this.x < p.x + p.w &&
+              this.y + this.radius > p.y && this.y - this.radius < p.y + p.h) {
+            this.y = p.y - this.radius;
+            this.vy = -3.8;
+          }
+        });
+
+        this.life--;
+        // Spawn ember trails
+        if (Math.random() > 0.4) {
+          particles.push(new Particle(this.x, this.y, '#fcb000', 0.8));
+        }
+      }
+      draw() {
+        ctx.save();
+        ctx.translate(this.x - cameraX, this.y);
+        ctx.fillStyle = '#ff3800';
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fce000';
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    class Particle {
+      constructor(x, y, color, speedScale = 1) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 3 * speedScale;
+        this.vy = (Math.random() - 0.5) * 3 * speedScale;
+        this.color = color;
+        this.alpha = 1;
+        this.size = Math.random() * 4 + 2;
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.alpha -= 0.035;
+      }
+      draw() {
+        if (this.alpha <= 0) return;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.alpha);
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x - cameraX, this.y, this.size, this.size);
+        ctx.restore();
+      }
+    }
+
+    function createJumpDust(x, y) {
+      for (let i = 0; i < 5; i++) {
+        particles.push(new Particle(x, y - 2, '#ffffff', 0.6));
+      }
+    }
+
+    function createExplosion(x, y, color = '#fce000') {
+      for (let i = 0; i < 14; i++) {
+        particles.push(new Particle(x, y, color, 1.6));
+      }
+    }
+
+    class Enemy {
+      constructor(x, y, range = 90) {
+        this.startX = x;
+        this.x = x;
+        this.y = y;
+        this.w = 26;
+        this.h = 24;
+        this.vx = -1.2;
+        this.range = range;
+        this.alive = true;
+        this.squished = false;
+        this.squishTimer = 0;
+        this.animTimer = 0;
+      }
+      update() {
+        if (this.squished) {
+          this.squishTimer++;
+          return;
+        }
+
+        this.x += this.vx;
+        this.animTimer += 0.1;
+
+        // Patrol range logic or turn at ledge
+        if (this.x < this.startX - this.range) {
+          this.vx = Math.abs(this.vx);
+        } else if (this.x > this.startX + this.range) {
+          this.vx = -Math.abs(this.vx);
+        }
+      }
+      draw() {
+        if (!this.alive) return;
+        ctx.save();
+        ctx.translate(Math.round(this.x - cameraX), Math.round(this.y));
+
+        if (this.squished) {
+          // Flattened squish look
+          ctx.fillStyle = '#b84418';
+          ctx.fillRect(2, 16, 22, 8);
+          ctx.fillStyle = '#fce000';
+          ctx.fillRect(6, 18, 4, 3);
+          ctx.fillRect(16, 18, 4, 3);
+          ctx.restore();
+          return;
+        }
+
+        // 8-bit Goomba-style mushroom enemy
+        const walkBob = Math.sin(this.animTimer * 5) > 0 ? 1 : 0;
+
+        // Dome Head
+        ctx.fillStyle = '#9b3d12';
+        ctx.beginPath();
+        ctx.arc(13, 10, 12, Math.PI, 0);
+        ctx.lineTo(25, 17);
+        ctx.lineTo(1, 17);
+        ctx.closePath();
+        ctx.fill();
+
+        // Face & Body
+        ctx.fillStyle = '#fcb088';
+        ctx.fillRect(4, 12, 18, 7);
+
+        // Angled Angry Brows & Eyes
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(6, 12, 4, 2);
+        ctx.fillRect(16, 12, 4, 2);
+        ctx.fillRect(7, 14, 2, 4);
+        ctx.fillRect(17, 14, 2, 4);
+
+        // Feet / Stems with walk animation
+        ctx.fillStyle = '#000000';
+        if (walkBob === 1) {
+          ctx.fillRect(2, 19, 7, 5);
+          ctx.fillRect(17, 20, 7, 4);
+        } else {
+          ctx.fillRect(2, 20, 7, 4);
+          ctx.fillRect(17, 19, 7, 5);
+        }
+
+        ctx.restore();
+      }
+    }
+
+    class SpinningCollectStar {
+      constructor(x, y, points = 10, isHardToReach = false) {
+        this.x = x;
+        this.y = y;
+        this.baseY = y;
+        this.points = points;
+        this.isHardToReach = isHardToReach;
+        this.angle = Math.random() * Math.PI * 2;
+        this.bobOffset = Math.random() * Math.PI * 2;
+        this.collected = false;
+        this.radius = isHardToReach ? 11 : 9;
+      }
+      update() {
+        this.angle += 0.08; // Putaran bintang
+        this.bobOffset += 0.05;
+        this.y = this.baseY + Math.sin(this.bobOffset) * 4;
+      }
+      draw() {
+        if (this.collected) return;
+        ctx.save();
+        ctx.translate(this.x - cameraX, this.y);
+
+        // 3D spinning effect menggunakan scaleX
+        const scaleX = Math.cos(this.angle);
+        ctx.scale(scaleX, 1);
+
+        // Outer Glow untuk bintang sukar capai
+        if (this.isHardToReach) {
+          ctx.shadowColor = '#00f7ff';
+          ctx.shadowBlur = 8;
+        }
+
+        // Lukis bentuk bintang 5 bucu piksel
+        ctx.fillStyle = this.isHardToReach ? '#00f7ff' : '#ffe600';
+        ctx.beginPath();
+        const spikes = 5;
+        const outerR = this.radius;
+        const innerR = this.radius * 0.45;
+        for (let i = 0; i < spikes * 2; i++) {
+          const r = (i % 2 === 0) ? outerR : innerR;
+          const a = (i * Math.PI) / spikes - Math.PI / 2;
+          const px = Math.cos(a) * r;
+          const py = Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        // Titik mata hitam retro di tengah bintang
+        if (Math.abs(scaleX) > 0.4) {
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(-2, -3, 1, 3);
+          ctx.fillRect(1, -3, 1, 3);
+        }
+
+        ctx.restore();
+      }
+    }
+
+    class MathStar {
+      constructor(x, y, value, isCorrect) {
+        this.x = x;
+        this.y = y;
+        this.baseY = y;
+        this.value = value;
+        this.isCorrect = isCorrect;
+        this.size = 28;
+        this.bobOffset = Math.random() * Math.PI * 2;
+        this.collected = false;
+      }
+      update() {
+        this.bobOffset += 0.06;
+        this.y = this.baseY + Math.sin(this.bobOffset) * 6;
+      }
+      draw() {
+        if (this.collected) return;
+        ctx.save();
+        ctx.translate(this.x - cameraX, this.y);
+
+        // Glowing Star / Golden Coin Ring
+        ctx.fillStyle = '#fcb000';
+        ctx.beginPath();
+        ctx.arc(0, 0, 16, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#fce000';
+        ctx.beginPath();
+        ctx.arc(0, 0, 13, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Print arithmetic choice value inside star
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 12px "Press Start 2P", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.value, 0, 1);
+
+        ctx.restore();
+      }
+    }
+
+    let platforms = [];
+    let enemies = [];
+    let mathStars = [];
+    let spinningStars = [];
+    let fireballs = [];
+    let particles = [];
+    let floatingTexts = [];
+    let powerUpUnlocked = false; // Memastikan power-up dicetuskan sekali setiap melepasi 100 markah
+
+    class FloatingText {
+      constructor(x, y, text, color = '#fce000') {
+        this.x = x;
+        this.y = y;
+        this.text = text;
+        this.color = color;
+        this.alpha = 1;
+      }
+      update() {
+        this.y -= 1.1;
+        this.alpha -= 0.02;
+      }
+      draw() {
+        if (this.alpha <= 0) return;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.alpha);
+        ctx.font = '10px "Press Start 2P"';
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 4;
+        ctx.fillText(this.text, this.x - cameraX, this.y);
+        ctx.restore();
+      }
+    }
+
+    function buildLevel() {
+      platforms = [];
+      enemies = [];
+      mathStars = [];
+      spinningStars = [];
+      fireballs = [];
+      particles = [];
+      floatingTexts = [];
+
+      generateMathProblem();
+
+      // Extended level ground with pits
+      const totalChunks = 14;
+      let currentX = 0;
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunkWidth = 320 + Math.random() * 160;
+        // Ground platform
+        platforms.push({
+          x: currentX,
+          y: 330,
+          w: chunkWidth,
+          h: 70,
+          type: 'ground'
+        });
+
+        // Elevated brick blocks & mystery platforms
+        const platformY = [240, 180, 260][i % 3];
+        const platWidth = 100 + (i % 2) * 40;
+        platforms.push({
+          x: currentX + 80,
+          y: platformY,
+          w: platWidth,
+          h: 22,
+          type: 'brick'
+        });
+
+        // Tabur Bintang Berputar (Spinning Stars):
+        // 1. Bintang biasa di atas platform sederhana (10 mata)
+        spinningStars.push(new SpinningCollectStar(currentX + 110, platformY - 26, 10, false));
+        spinningStars.push(new SpinningCollectStar(currentX + platWidth + 20, 290, 10, false));
+
+        // 2. Bintang sukar dicapai di tempat tinggi atau di atas jurang pit (25 - 50 mata)
+        if (i % 2 === 0) {
+          // Bintang tinggi di udara (sukar dicapai tanpa momentum lompatan kuat)
+          spinningStars.push(new SpinningCollectStar(currentX + 130, platformY - 70, 30, true));
+        }
+        if (i < totalChunks - 1) {
+          // Bintang di atas jurang maut (berisiko tinggi = mata tertinggi: 50 pts)
+          spinningStars.push(new SpinningCollectStar(currentX + chunkWidth + 30, 240, 50, true));
+        }
+
+        // Add classic Green Mario Pipes
+        if (i % 2 === 1) {
+          platforms.push({
+            x: currentX + chunkWidth - 70,
+            y: 270,
+            w: 48,
+            h: 60,
+            type: 'pipe'
+          });
+          // Bintang di atas paip
+          spinningStars.push(new SpinningCollectStar(currentX + chunkWidth - 46, 235, 20, false));
+        }
+
+        // Spawn Enemies with increased speed in Level 2
+        if (i > 0) {
+          const enemySpeed = worldLevel >= 2 ? 1.9 : 1.2;
+          const e1 = new Enemy(currentX + 160, 306, 60);
+          e1.vx = -enemySpeed;
+          enemies.push(e1);
+
+          if (i % 3 === 0) {
+            const e2 = new Enemy(currentX + 110, platformY - 24, 30);
+            e2.vx = enemySpeed;
+            enemies.push(e2);
+          }
+        }
+
+        // Advance X with gap pits between chunks
+        currentX += chunkWidth + (i < totalChunks - 1 ? (worldLevel >= 2 ? 80 : 65) : 0);
+      }
+
+      // Distribute Math Problem Stars across the stage
+      // 1 correct, 2 distractors positioned at different milestone platforms
+      const starLocations = [
+        { x: 380, y: 150 },
+        { x: 780, y: 190 },
+        { x: 1250, y: 140 },
+        { x: 1720, y: 200 },
+        { x: 2200, y: 160 }
+      ];
+
+      // Shuffle locations
+      starLocations.sort(() => Math.random() - 0.5);
+
+      currentProblem.choices.forEach((choiceVal, idx) => {
+        const loc = starLocations[idx];
+        const isCorrect = (choiceVal === currentProblem.solution);
+        mathStars.push(new MathStar(loc.x, loc.y, choiceVal, isCorrect));
+      });
+    }
+
+    function checkFireballCollisions() {
+      for (let fi = fireballs.length - 1; fi >= 0; fi--) {
+        const f = fireballs[fi];
+        if (f.life <= 0) {
+          fireballs.splice(fi, 1);
+          continue;
+        }
+
+        // Fireball vs Enemy collision
+        let hit = false;
+        for (let ei = 0; ei < enemies.length; ei++) {
+          const e = enemies[ei];
+          if (!e.squished &&
+              f.x > e.x && f.x < e.x + e.w &&
+              f.y > e.y && f.y < e.y + e.h) {
+            e.squished = true;
+            hit = true;
+            score += 150;
+            updateHUD();
+            AudioEngine.hitEnemy();
+            createExplosion(e.x + e.w / 2, e.y + e.h / 2, '#ff3800');
+            floatingTexts.push(new FloatingText(e.x, e.y, '+150', '#ffcc00'));
+            break;
+          }
+        }
+        if (hit) {
+          fireballs.splice(fi, 1);
+        }
+      }
+    }
+
+    function checkPlayerPlatformCollisions() {
+      player.grounded = false;
+
+      platforms.forEach(p => {
+        // AABB Collision check
+        if (player.x + player.w > p.x &&
+            player.x < p.x + p.w &&
+            player.y + player.h >= p.y &&
+            player.y + player.h <= p.y + 16 &&
+            player.vy >= 0) {
+          player.y = p.y - player.h;
+          player.vy = 0;
+          player.grounded = true;
+        }
+      });
+    }
+
+    function checkSpinningStarCollisions() {
+      spinningStars.forEach(star => {
+        if (!star.collected) {
+          const dx = (player.x + player.w / 2) - star.x;
+          const dy = (player.y + player.h / 2) - star.y;
+          const dist = Math.hypot(dx, dy);
+
+          if (dist < player.w / 2 + star.radius + 6) {
+            star.collected = true;
+
+            // Jika dalam mod Super Star Mario, mata digandakan 2x!
+            const earnedPoints = player.isSuper ? (star.points * 2) : star.points;
+            const prevScore = score;
+            score += earnedPoints;
+            starsCollected++;
+
+            AudioEngine.coinPickup(star.isHardToReach);
+            createExplosion(star.x, star.y, star.isHardToReach ? '#00f7ff' : '#ffe600');
+
+            const txtColor = star.isHardToReach ? '#00ffff' : '#ffea00';
+            floatingTexts.push(new FloatingText(star.x, star.y - 12, `+${earnedPoints}`, txtColor));
+
+            // Semak melepasi 100 markah untuk mengaktifkan Power-Up
+            if (prevScore < 100 && score >= 100) {
+              player.activateSuperStar();
+            } else if (score >= 250 && Math.floor(prevScore / 150) < Math.floor(score / 150)) {
+              // Re-charge / extend powerup setiap lonjakan markah seterusnya
+              player.activateSuperStar();
+            }
+
+            updateHUD();
+          }
+        }
+      });
+    }
+
+    function checkStarCollisions() {
+      mathStars.forEach(star => {
+        if (!star.collected) {
+          const dx = (player.x + player.w / 2) - star.x;
+          const dy = (player.y + player.h / 2) - star.y;
+          const dist = Math.hypot(dx, dy);
+
+          if (dist < player.w / 2 + star.size / 2) {
+            star.collected = true;
+
+            if (star.isCorrect) {
+              // Solved Equation!
+              AudioEngine.correct();
+              score += 500;
+              starsCollected++;
+              solvedEquationsCount++;
+              createExplosion(star.x, star.y, '#fce000');
+              floatingTexts.push(new FloatingText(star.x, star.y - 10, 'CORRECT! +500', '#00ff66'));
+              showBannerNotice(`SOLVED! ${currentProblem.text.replace('?', star.value)}`);
+
+              // Advance to Level 2 after solving 3 equations
+              if (solvedEquationsCount === 3 && worldLevel === 1) {
+                setTimeout(() => {
+                  worldLevel = 2;
+                  showBannerNotice('★ LEVEL 2: UNDERGROUND WORLD! ★');
+                  buildLevel();
+                  player.reset();
+                  updateHUD();
+                }, 800);
+                return;
+              }
+
+              // Generate new challenge and spawn new star batch
+              setTimeout(() => {
+                if (solvedEquationsCount > 3 && solvedEquationsCount % 4 === 0) {
+                  worldLevel++;
+                }
+                generateMathProblem();
+                respawnStarsAhead();
+                updateHUD();
+              }, 400);
+
+            } else {
+              // Wrong answer collected
+              AudioEngine.wrong();
+              score = Math.max(0, score - 150);
+              createExplosion(star.x, star.y, '#ff4444');
+              floatingTexts.push(new FloatingText(star.x, star.y - 10, 'WRONG! -150', '#ff4444'));
+            }
+            updateHUD();
+          }
+        }
+      });
+    }
+
+    function respawnStarsAhead() {
+      // Clear collected stars and spawn new equation choice stars ahead of the player
+      mathStars = [];
+      const forwardBaseX = Math.max(player.x + 240, cameraX + 280);
+      const starOffsets = [120, 360, 600];
+      starOffsets.sort(() => Math.random() - 0.5);
+
+      currentProblem.choices.forEach((choiceVal, idx) => {
+        const sx = forwardBaseX + starOffsets[idx];
+        const sy = 160 + (idx % 2) * 50;
+        const isCorrect = (choiceVal === currentProblem.solution);
+        mathStars.push(new MathStar(sx, sy, choiceVal, isCorrect));
+      });
+    }
+
+    let pendingEnemy = null;
+
+    function checkEnemyCollisions() {
+      if (currentState !== STATE.PLAYING) return;
+
+      enemies.forEach(enemy => {
+        if (!enemy.squished) {
+          if (player.x + player.w > enemy.x &&
+              player.x < enemy.x + enemy.w &&
+              player.y + player.h > enemy.y &&
+              player.y < enemy.y + enemy.h) {
+
+            // Jika pemain dalam Super Star Mode, musuh terus berkecai!
+            if (player.isSuper) {
+              enemy.squished = true;
+              AudioEngine.hitEnemy();
+              score += 300;
+              floatingTexts.push(new FloatingText(enemy.x, enemy.y, 'STAR SMASH! +300', '#ff00ff'));
+              createExplosion(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, '#ff00ff');
+              updateHUD();
+              return;
+            }
+
+            if (player.invincibleTimer > 0) return;
+
+            // Mario head-stomp mechanic
+            if (player.vy > 1 && player.y + player.h < enemy.y + 14) {
+              enemy.squished = true;
+              player.vy = -7.5; // Stomp bounce
+              AudioEngine.hitEnemy();
+              score += 200;
+              updateHUD();
+              floatingTexts.push(new FloatingText(enemy.x, enemy.y, 'STOMP +200'));
+              createExplosion(enemy.x + enemy.w / 2, enemy.y + enemy.h, '#fcb088');
+            } else {
+              // Terlanggar musuh -> Cabaran Sifir Rescue!
+              triggerSifirQuiz(enemy);
+            }
+          }
+        }
+      });
+    }
+
+    function triggerSifirQuiz(enemy) {
+      pendingEnemy = enemy;
+      currentState = STATE.QUIZ;
+      AudioEngine.playerHurt();
+
+      // Sifir 2 hingga 9
+      const num1 = Math.floor(Math.random() * 8) + 2;
+      const num2 = Math.floor(Math.random() * 8) + 2;
+      const correctAnswer = num1 * num2;
+
+      const choices = [correctAnswer];
+      while (choices.length < 3) {
+        const offset = (Math.random() > 0.5 ? 1 : -1) * (Math.floor(Math.random() * 4) + 1);
+        const wrongVal = Math.max(2, correctAnswer + offset * num1);
+        if (!choices.includes(wrongVal)) {
+          choices.push(wrongVal);
+        }
+      }
+      choices.sort(() => Math.random() - 0.5);
+
+      const modal = document.getElementById('sifirModal');
+      document.getElementById('sifirQuestion').innerText = `${num1} × ${num2} = ?`;
+      const choicesContainer = document.getElementById('sifirChoices');
+      choicesContainer.innerHTML = '';
+
+      choices.forEach(val => {
+        const btn = document.createElement('button');
+        btn.className = 'retro-btn retro-btn-yellow py-3 px-2 text-xs sm:text-sm font-bold rounded shadow-lg';
+        btn.innerText = val;
+        btn.onclick = () => handleSifirAnswer(val === correctAnswer);
+        choicesContainer.appendChild(btn);
+      });
+
+      modal.classList.remove('hidden');
+    }
+
+    function handleSifirAnswer(isCorrect) {
+      const modal = document.getElementById('sifirModal');
+      modal.classList.add('hidden');
+
+      if (isCorrect) {
+        AudioEngine.correct();
+        score += 250;
+        floatingTexts.push(new FloatingText(player.x, player.y - 12, 'SIFIR BETUL! +250', '#00ff66'));
+        if (pendingEnemy) {
+          pendingEnemy.squished = true;
+          createExplosion(pendingEnemy.x + pendingEnemy.w / 2, pendingEnemy.y + pendingEnemy.h / 2, '#00ff66');
+        }
+        player.invincibleTimer = 90;
+        currentState = STATE.PLAYING;
+        updateHUD();
+      } else {
+        currentState = STATE.PLAYING;
+        playerTakeDamage(false);
+      }
+      pendingEnemy = null;
+    }
+
+    function playerTakeDamage(pitDeath = false) {
+      if (player.invincibleTimer > 0) return;
+
+      lives--;
+      AudioEngine.playerHurt();
+      updateHUD();
+
+      if (pitDeath || lives <= 0) {
+        if (lives <= 0) {
+          triggerGameOver();
+        } else {
+          // Respawn safely on nearest ground platform
+          player.reset();
+          cameraX = Math.max(0, player.x - 120);
+        }
+      } else {
+        player.invincibleTimer = 80;
+        player.vy = -5;
+        player.vx = -player.facing * 4;
+      }
+    }
+
+    function showBannerNotice(msg) {
+      const banner = document.getElementById('bannerNotice');
+      banner.innerText = msg;
+      banner.classList.remove('hidden');
+      setTimeout(() => {
+        banner.classList.add('hidden');
+      }, 1600);
+    }
+
+    function updateHUD() {
+      document.getElementById('scoreVal').innerText = score.toString().padStart(6, '0');
+      document.getElementById('starVal').innerText = starsCollected.toString().padStart(2, '0');
+      document.getElementById('stageVal').innerText = `1 - ${worldLevel}`;
+
+      let hearts = '';
+      for (let i = 0; i < lives; i++) hearts += '♥';
+      document.getElementById('livesVal').innerText = hearts || '☠';
+    }
+
+    function triggerGameOver() {
+      currentState = STATE.GAMEOVER;
+      AudioEngine.gameOver();
+      document.getElementById('finalScoreVal').innerText = score;
+      document.getElementById('finalSolvedVal').innerText = solvedEquationsCount;
+      document.getElementById('gameOverScreen').classList.remove('hidden');
+    }
+
+    function startGame() {
+      AudioEngine.init();
+      score = 0;
+      starsCollected = 0;
+      lives = 3;
+      worldLevel = 1;
+      solvedEquationsCount = 0;
+
+      buildLevel();
+      player.reset();
+      updateHUD();
+
+      document.getElementById('startScreen').classList.add('hidden');
+      document.getElementById('gameOverScreen').classList.add('hidden');
+      currentState = STATE.PLAYING;
+    }
+
+    document.getElementById('startBtn').addEventListener('click', startGame);
+    document.getElementById('restartBtn').addEventListener('click', startGame);
+
+    function drawEnvironment() {
+      const isLevel2 = (worldLevel >= 2);
+
+      // Sky / Cave background
+      ctx.fillStyle = isLevel2 ? '#0b1320' : '#5c94fc';
+      ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+      // Parallax Distant Hills / Caverns
+      ctx.save();
+      ctx.translate(-cameraX * 0.25, 0);
+      for (let i = -2; i < 20; i++) {
+        const hillX = i * 360;
+        if (isLevel2) {
+          // Underground Cavern Arches
+          ctx.fillStyle = '#061d28';
+          ctx.beginPath();
+          ctx.arc(hillX + 160, 370, 110, Math.PI, 0);
+          ctx.fill();
+          ctx.strokeStyle = '#023047';
+          ctx.lineWidth = 4;
+          ctx.stroke();
+
+          // Cavern Stalactites
+          drawStalactite(hillX + 80, 0, 30, 45);
+          drawStalactite(hillX + 240, 0, 40, 60);
+        } else {
+          // Overworld Round Hills
+          ctx.fillStyle = '#00a800';
+          ctx.beginPath();
+          ctx.arc(hillX + 160, 350, 90, Math.PI, 0);
+          ctx.fill();
+          ctx.strokeStyle = '#005800';
+          ctx.lineWidth = 4;
+          ctx.stroke();
+
+          // Fluffy 8-bit Clouds
+          drawPixelCloud(hillX + 80, 70);
+          drawPixelCloud(hillX + 260, 110);
+        }
+      }
+      ctx.restore();
+
+      // Draw Platforms and Bricks
+      platforms.forEach(p => {
+        if (p.x + p.w < cameraX - 50 || p.x > cameraX + V_WIDTH + 50) return;
+
+        const rx = p.x - cameraX;
+        const ry = p.y;
+
+        if (p.type === 'ground') {
+          if (isLevel2) {
+            // Underground Stone Slate
+            ctx.fillStyle = '#0077b6';
+            ctx.fillRect(rx, ry, p.w, 8);
+            ctx.fillStyle = '#023e8a';
+            ctx.fillRect(rx, ry + 8, p.w, p.h - 8);
+          } else {
+            // Overworld Grass & Soil
+            ctx.fillStyle = '#00a800';
+            ctx.fillRect(rx, ry, p.w, 8);
+            ctx.fillStyle = '#c84c0c';
+            ctx.fillRect(rx, ry + 8, p.w, p.h - 8);
+          }
+
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(rx, ry, p.w, p.h);
+
+          for (let bx = 0; bx < p.w; bx += 32) {
+            ctx.strokeRect(rx + bx, ry + 8, 32, 24);
+            ctx.strokeRect(rx + bx - 16, ry + 32, 32, 24);
+          }
+        } else if (p.type === 'brick') {
+          // Mario Bricks (Underground Blue-Teal in Level 2)
+          ctx.fillStyle = isLevel2 ? '#0077b6' : '#b84418';
+          ctx.fillRect(rx, ry, p.w, p.h);
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(rx, ry, p.w, p.h);
+
+          for (let bx = 0; bx < p.w; bx += 20) {
+            ctx.fillStyle = isLevel2 ? '#48cae4' : '#f87858';
+            ctx.fillRect(rx + bx + 2, ry + 2, 16, 8);
+            ctx.fillRect(rx + bx - 8, ry + 12, 16, 8);
+          }
+        } else if (p.type === 'pipe') {
+          // Pipes (Neon Indigo in Level 2)
+          ctx.fillStyle = isLevel2 ? '#0077b6' : '#00a800';
+          ctx.fillRect(rx, ry, p.w, p.h);
+          ctx.fillRect(rx - 4, ry, p.w + 8, 16);
+
+          ctx.fillStyle = isLevel2 ? '#90e0ef' : '#80d010';
+          ctx.fillRect(rx + 6, ry, 6, p.h);
+          ctx.fillStyle = isLevel2 ? '#03045e' : '#005000';
+          ctx.fillRect(rx + p.w - 8, ry, 8, p.h);
+
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(rx, ry, p.w, p.h);
+          ctx.strokeRect(rx - 4, ry, p.w + 8, 16);
+        }
+      });
+    }
+
+    function drawStalactite(x, y, w, h) {
+      ctx.fillStyle = '#023e8a';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + w / 2, y + h);
+      ctx.lineTo(x + w, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#03045e';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    function drawPixelCloud(cx, cy) {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+      ctx.arc(cx + 20, cy - 6, 26, 0, Math.PI * 2);
+      ctx.arc(cx + 44, cy, 20, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function update() {
+      if (currentState !== STATE.PLAYING) return;
+
+      player.update();
+      checkPlayerPlatformCollisions();
+
+      // Camera smoothly tracks player
+      const targetCamX = player.x - V_WIDTH * 0.35;
+      cameraX += (targetCamX - cameraX) * 0.1;
+      if (cameraX < 0) cameraX = 0;
+
+      // Update Projectiles
+      fireballs.forEach(f => f.update());
+      checkFireballCollisions();
+
+      // Update Enemies
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        e.update();
+        if (e.squishTimer > 25) {
+          enemies.splice(i, 1);
+        }
+      }
+      checkEnemyCollisions();
+
+      // Update Spinning Collectible Stars
+      spinningStars.forEach(s => s.update());
+      checkSpinningStarCollisions();
+
+      // Update Math Stars
+      mathStars.forEach(s => s.update());
+      checkStarCollisions();
+
+      // Update Particles & Floating Text
+      for (let i = particles.length - 1; i >= 0; i--) {
+        particles[i].update();
+        if (particles[i].alpha <= 0) particles.splice(i, 1);
+      }
+      for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        floatingTexts[i].update();
+        if (floatingTexts[i].alpha <= 0) floatingTexts.splice(i, 1);
+      }
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, V_WIDTH, V_HEIGHT);
+
+      // 1. Background, Hills & Platforms
+      drawEnvironment();
+
+      // 2. Spinning Collectible Stars (Berputar & Bercahaya)
+      spinningStars.forEach(s => s.draw());
+
+      // 3. Math Equation Target Stars
+      mathStars.forEach(s => s.draw());
+
+      // 4. Enemies
+      enemies.forEach(e => e.draw());
+
+      // 5. Fireballs
+      fireballs.forEach(f => f.draw());
+
+      // 6. Player (dengan Super Rainbow effects jika aktif)
+      player.draw();
+
+      // 7. Particle FX & Scores
+      particles.forEach(p => p.draw());
+      floatingTexts.forEach(t => t.draw());
+    }
+
+    function gameLoop() {
+      update();
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Initialize initial canvas layout
+    buildLevel();
+    updateHUD();
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
